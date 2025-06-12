@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Attendance System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(to bottom, #1e90ff, #87cefa);
+            color: #fff;
+            text-align: center;
+        }
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+        }
+        form {
+            border: 2px solid #fff;
+            padding: 20px;
+            border-radius: 10px;
+            display: inline-block;
+            background-color: rgba(255, 255, 255, 0.1);
+            margin-bottom: 20px;
+        }
+        label, input, button {
+            font-size: 1.2em;
+            margin: 10px 0;
+            display: block;
+        }
+        input {
+            padding: 10px;
+            border: 2px solid #fff;
+            border-radius: 5px;
+            width: 80%;
+            max-width: 300px;
+            background-color: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+        button {
+            background-color: #4682b4;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #5a9bd4;
+        }
+        #loading {
+            display: none;
+            margin-top: 20px;
+            font-size: 1.2em;
+        }
+        #locationStatus, #attendanceRecords {
+            margin-top: 20px;
+            font-size: 1.2em;
+        }
+        table {
+            margin: 20px auto;
+            border-collapse: collapse;
+            width: 80%;
+            max-width: 600px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        th, td {
+            border: 1px solid #fff;
+            padding: 10px;
+            text-align: center;
+        }
+        th {
+            background-color: #4682b4;
+        }
+    </style>
+</head>
+<body>
+    <h1>Student Attendance</h1>
+
+    <form id="attendanceForm">
+        <label for="studentId">Student ID:</label>
+        <input type="text" id="studentId" required>
+        <button type="submit">Mark Attendance</button>
+    </form>
+
+    <div id="loading">
+        <p>Loading...</p> <!-- Simple text for loading -->
+    </div>
+
+    <div id="locationStatus"></div>
+
+    <h1>Attendance Status</h1>
+    <div id="attendanceRecords"></div>
+
+    <script>
+        // Get the target location from the server or teacher input
+        const targetLatitude = 12.903265; // Your latitude
+        const targetLongitude = 80.095833; // Your longitude
+        const targetAltitude = 0;
+        const toleranceRadius = 50; // Meters
+
+        // Function to get the user's current location
+        function getCurrentLocation() {
+            return new Promise((resolve, reject) => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            const { latitude, longitude, altitude } = position.coords;
+                            resolve({ latitude, longitude, altitude });
+                        },
+                        (error) => {
+                            console.error('Error getting location:', error);
+                            reject(error);
+                        }
+                    );
+                } else {
+                    reject(new Error('Geolocation is not supported by this browser.'));
+                }
+            });
+        }
+
+        // Function to check if the user is within the target location
+        function isWithinTargetLocation(currentLocation) {
+            const { latitude, longitude, altitude } = currentLocation;
+            const distance = calculateDistance(latitude, longitude, targetLatitude, targetLongitude);
+            return distance <= toleranceRadius && Math.abs(altitude - targetAltitude) <= 10;
+        }
+
+        // Function to calculate the distance between two coordinates
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Earth's radius in kilometers
+            const dLat = toRadians(lat2 - lat1);
+            const dLon = toRadians(lon2 - lon1);
+            const a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c * 1000; // Distance in meters
+        }
+
+        function toRadians(degrees) {
+            return degrees * (Math.PI / 180);
+        }
+
+        // Event listener for form submission
+        document.getElementById('attendanceForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const studentId = document.getElementById('studentId').value;
+
+            // Show loading graphic
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('locationStatus').textContent = '';
+
+            try {
+                const currentLocation = await getCurrentLocation();
+                if (isWithinTargetLocation(currentLocation)) {
+                    document.getElementById('locationStatus').textContent = `You are at the target location. Coordinates: Latitude: ${currentLocation.latitude}, Longitude: ${currentLocation.longitude}, Altitude: ${currentLocation.altitude} meters.`;
+
+                    // Simulate a delay for marking attendance
+                    setTimeout(async () => {
+                        // Mark attendance
+                        const response = await fetch('/attendance/mark', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ studentId, location: currentLocation })
+                        });
+
+                        // Hide loading graphic
+                        document.getElementById('loading').style.display = 'none';
+
+                        if (response.ok) {
+                            document.getElementById('locationStatus').textContent += ' Attendance marked successfully!';
+                            fetchAttendance(); // Refresh attendance records
+                        } else {
+                            const errorText = await response.text();
+                            document.getElementById('locationStatus').textContent += ' ' + errorText;
+                        }
+                    }, 10000); // 10 seconds delay
+                } else {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('locationStatus').textContent = `You are not at the target location. Coordinates: Latitude: ${currentLocation.latitude}, Longitude: ${currentLocation.longitude}, Altitude: ${currentLocation.altitude} meters.`;
+                }
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('locationStatus').textContent = 'Error getting location: ' + error.message;
+            }
+        });
+
+        // Function to fetch attendance records
+        async function fetchAttendance() {
+            const response = await fetch('/attendance');
+            const records = await response.json();
+            const recordsDiv = document.getElementById('attendanceRecords');
+
+            if (records.length === 0) {
+                recordsDiv.innerHTML = '<p>No attendance records found.</p>';
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.innerHTML = `
+                <tr>
+                    <th>Student ID</th>
+                    <th>Date</th>
+                    <th>Status</th>
+                </tr>
+            `;
+
+            records.forEach(record => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${record.studentId}</td>
+                    <td>${record.date}</td>
+                    <td>${record.status}</td>
+                `;
+                table.appendChild(row);
+            });
+
+            recordsDiv.appendChild(table);
+        }
+
+        // Fetch attendance records on page load
+        fetchAttendance();
+    </script>
+</body>
+</html>
